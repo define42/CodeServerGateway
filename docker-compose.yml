@@ -1,0 +1,36 @@
+version: "3.5"
+services:
+ gatekeeper:
+    build: .
+    ports:
+      - 8000:80
+      - 443:443
+    environment:
+      #      SERVER_DOMAIN: code.
+      #      ACME_SERVER: https://acme-v02.api.letsencrypt.org/directory
+      #      PROXY_DOMAIN: code.
+      BASE_DN: "dc=glauth,dc=com"
+      BIND_PASSWORD: "mysecret"
+      BIND_USER: "cn=serviceuser,ou=svcaccts,dc=glauth,dc=com"
+      LDAP_SERVER: "ldapserver:389"
+      HASH_SALT: "123456789"
+      CODE_SERVER_IMAGE: "linuxserver/codeserver"
+    volumes:
+     - /var/run/docker.sock:/var/run/docker.sock
+     - /data/:/data/
+    networks:
+      codeserver:
+ ldapserver:
+    image: test/ldap
+    ports:
+     - 389:389
+     - 5555:5555
+    networks:
+      codeserver:
+networks:
+  codeserver:
+    driver: bridge
+    name: codeservernetwork
+    ipam:
+     config:
+       - subnet: 10.0.0.0/24
