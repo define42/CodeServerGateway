@@ -15,7 +15,6 @@ WORKDIR /app/
 #RUN cp /download/go.sum .
 COPY go.mod go.mod
 COPY go.sum go.sum
-ADD vendor.tar.gz .
 COPY main.go main.go
 RUN CGO_ENABLED=0 go build -o /main
 RUN chmod 777 /main
