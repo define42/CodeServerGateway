@@ -1,0 +1,155 @@
+<html>
+	<head>
+		<link href=/proxypublic/bootstrap.css rel=stylesheet>
+	<link rel=icon href="/proxypublic/logo.svg" type="image/svg+xml">
+<style>
+/* Center the loader */
+#loader, #booter {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 120px;
+  height: 120px;
+  margin: -76px 0 0 -76px;
+  border: 16px solid #f3f3f3;
+  border-radius: 50%;
+    border-top: 16px solid #0098FF;
+  border-bottom: 16px solid #0098FF;
+  -webkit-animation: spin 2s linear infinite;
+  animation: spin 2s linear infinite;
+}
+
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Add animation to "page content" */
+.animate-bottom {
+  position: relative;
+  -webkit-animation-name: animatebottom;
+  -webkit-animation-duration: 1s;
+  animation-name: animatebottom;
+  animation-duration: 1s
+}
+
+@-webkit-keyframes animatebottom {
+  from { bottom:-100px; opacity:0 } 
+  to { bottom:0px; opacity:1 }
+}
+
+@keyframes animatebottom { 
+  from{ bottom:-100px; opacity:0 } 
+  to{ bottom:0; opacity:1 }
+}
+
+#myDiv {
+  display: none;
+  text-align: center;
+}
+</style>
+
+	</head>
+	<body onload="boot()">
+	<a class="btn btn-outline-danger" href=/disconnect><img src=/proxypublic/logout.svg>Logout</a>
+	<a class="btn btn-outline-dark" href=/fileexplorervsc><img src=/proxypublic/folder.svg>FileViewer</a>
+<table class="table">
+	<tr><td></td></tr>
+                                <tr class="table-secondary">
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                                <th>Ready</th>
+                                <th>Image</th>
+                                <th>State</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Digest</th>
+                                </tr>
+ <tbody>
+				<tr >
+
+				  <td>
+					  <button onclick="doDocker('restart')" class="btn btn-outline-dark"><img src=/proxypublic/restart.svg>Restart</button>
+				  </td>
+				  <td>
+					  <button onclick="doDocker('recreate')" class="btn btn-outline-dark"><img src=/proxypublic/recreate.svg>ReCreate</button>
+                                        <td><a id=statuscolor class="btn btn-warning" href=/><img src=/proxypublic/start.svg>Connect</a></td>
+
+                                <td><p id="active"></p></td>
+                                <td><p id="image"></p></td>
+                                <td><p id="state"></p></td>
+				<td><p id="status"></p></td>
+                                <td><p id="created"></p></td>
+                                <td><p id="digest"></p></td>
+				</tr>
+				</table>
+
+				<h4>Labels</h4>
+				<p id="labels"></p><br>
+
+<h4>Log:</h4><textarea id=logdata rows = "20" cols = "120" style="overflow:hidden" > </textarea>
+<div id="loader"></div>
+<div id="booter"></div>
+
+<script>
+function boot() {
+	loadDoc()
+   document.getElementById("loader").style.display = "none";
+};
+setInterval( function() {
+  loadDoc()
+}, 1000);
+function loadDoc() {
+  const xhttp = new XMLHttpRequest();
+  xhttp.onload = function() {
+	  const obj = JSON.parse(this.responseText); 
+	  if(obj.Active){
+		  document.getElementById("statuscolor").className = "btn btn-success";
+   		document.getElementById("booter").style.display = "none";
+	  }else{
+		  document.getElementById("statuscolor").className = "btn btn-danger";
+   		document.getElementById("booter").style.display = "inline";
+	  }
+    document.getElementById("active").innerHTML = obj.Active;
+    document.getElementById("status").innerHTML = obj.Docker.Status;
+    document.getElementById("state").innerHTML = obj.Docker.State;
+	  createdDate = new Date(Date(parseInt(obj.Docker.Created)));
+    document.getElementById("created").innerHTML = createdDate.toUTCString();
+    document.getElementById("image").innerHTML = obj.Docker.Image;
+    document.getElementById("digest").innerHTML = obj.Docker.ImageID.substring(7,19);
+
+	  var labelsResult = "";
+for (const [key, value] of Object.entries(obj.Docker.Labels)) {
+	labelsResult = labelsResult + `<b>${key}:</b> ${value}` + "<br>" ;
+//  console.log(`${key}: ${value}`);
+}
+    document.getElementById("labels").innerHTML = labelsResult;
+
+
+
+	  logTa = document.getElementById("logdata")
+    logTa.innerHTML = obj.Logs;
+	 logTa.scrollTop = logTa.scrollHeight;
+	  console.log(logTa.scrollTop);
+  }
+  xhttp.open("GET", "/dockerstatus?t=" + Math.random());
+  xhttp.send();
+};
+function doDocker(status) {
+   document.getElementById("loader").style.display = "inline";
+  const xhttp = new XMLHttpRequest();
+  xhttp.onload = function() {
+	  document.getElementById("loader").style.display = "none";
+	  loadDoc()
+  }
+  xhttp.open("GET", "/docker" + status);
+  xhttp.send();
+};
+</script>

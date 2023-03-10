@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
-	//	"encoding/json"
+
+	"encoding/json"
 	"fmt"
-	"github.com/caddyserver/certmagic"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
@@ -16,10 +16,14 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/gorilla/securecookie"
+	"io"
+	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -32,6 +36,34 @@ func DockerClient() *client.Client {
 }
 
 var dockerClient = DockerClient()
+
+func getDockerLogs(cid string) string {
+
+	i, err := dockerClient.ContainerLogs(context.Background(), cid, types.ContainerLogsOptions{
+		ShowStderr: true,
+		ShowStdout: true,
+		Timestamps: false,
+		Follow:     false,
+		Details:    false,
+		Tail:       "50",
+	})
+	if err != nil {
+		return ""
+	}
+
+	b, err := ioutil.ReadAll(i)
+	if err != nil {
+		return ""
+	}
+	output := string(b)
+
+	output = strings.ReplaceAll(output, "\r\n\r\n", "\r\n")
+	output = strings.ReplaceAll(output, "\r\n\r\n", "\r\n")
+	output = strings.ReplaceAll(output, "\r\n\r\n", "\r\n")
+	output = strings.ReplaceAll(output, "\n\n", "\n")
+	output = strings.ReplaceAll(output, "\n\n", "\n")
+	return output
+}
 
 func doContainerExist(name string) bool {
 	ctx := context.Background()
@@ -46,6 +78,50 @@ func doContainerExist(name string) bool {
 		}
 	}
 	return false
+}
+
+func pullContainer(imageName string) {
+
+	events, err := dockerClient.ImagePull(context.Background(), imageName, types.ImagePullOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	d := json.NewDecoder(events)
+
+	type Event struct {
+		Status         string `json:"status"`
+		Error          string `json:"error"`
+		Progress       string `json:"progress"`
+		ProgressDetail struct {
+			Current int `json:"current"`
+			Total   int `json:"total"`
+		} `json:"progressDetail"`
+	}
+
+	var event *Event
+	for {
+		if err := d.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			panic(err)
+		}
+
+		fmt.Printf("EVENT: %+v\n", event)
+	}
+	if event != nil {
+		if strings.Contains(event.Status, fmt.Sprintf("Downloaded newer image for %s", imageName)) {
+			// new
+			fmt.Println("new")
+		}
+
+		if strings.Contains(event.Status, fmt.Sprintf("Image is up to date for %s", imageName)) {
+			// up-to-date
+			fmt.Println("up-to-date")
+		}
+	}
 }
 
 func createContainer(name string) {
@@ -71,9 +147,10 @@ func createContainer(name string) {
 
 	_, err = dockerClient.ContainerCreate(ctx,
 		&container.Config{
+			Tty:      true,
 			Image:    os.Getenv("CODE_SERVER_IMAGE"),
 			Hostname: containerName,
-			Env:      []string{"GITUSER=" + name, "PUID=1000", "PGID=1000", "TZ=Europe/Copenhagen", "HASHED_PASSWORD=" + passwordSHA256(name), "SUDO_PASSWORD=password", "PORT=80"},
+			Env:      []string{"GITUSER=" + name, "PUID=1000", "PGID=1000", "TZ=Europe/Copenhagen", "HASHED_PASSWORD=" + passwordSHA256(name), "SUDO_PASSWORD=password", "PORT=8000", "DOCKER_MODS=" + os.Getenv("DOCKER_MODS")},
 		},
 		&container.HostConfig{
 			Privileged:    true,
@@ -125,7 +202,8 @@ func generateSecureCookie() *securecookie.SecureCookie {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("Random Cookie key generated")
+
+		fmt.Println("Random Cookie key generated :-)")
 	}
 
 	var s = securecookie.New(hashKey, blockKey)
@@ -142,7 +220,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 	username := req.Form.Get("username")
 	password := req.Form.Get("password")
 
-	ldapok, ldapError := ldapLogin2(username, password)
+	ldapok, ldapError := ldapLogin(username, password)
 
 	if ldapok {
 		fmt.Printf("Login username:%s\n", username)
@@ -176,7 +254,9 @@ func login(w http.ResponseWriter, req *http.Request) {
 		expiration := time.Now().Add(365 * 24 * time.Hour)
 		cookie := http.Cookie{Name: "key", Value: passwordSHA256(username), Expires: expiration}
 		http.SetCookie(w, &cookie)
-		http.Redirect(w, req, "/dockertools", 301)
+		cookie2 := http.Cookie{Name: "code-server-session", Value: passwordSHA256(username), Expires: expiration}
+		http.SetCookie(w, &cookie2)
+		http.Redirect(w, req, "/dockertools", 307)
 		return
 	} else {
 		c := &http.Cookie{
@@ -186,19 +266,35 @@ func login(w http.ResponseWriter, req *http.Request) {
 			Expires:  time.Unix(0, 0),
 			HttpOnly: false,
 		}
-
 		http.SetCookie(w, c)
+		c1 := &http.Cookie{
+			Name:     "code-server-session",
+			Value:    "",
+			Path:     "/",
+			Expires:  time.Unix(0, 0),
+			HttpOnly: false,
+		}
+		http.SetCookie(w, c1)
+		c2 := &http.Cookie{
+			Name:     "key",
+			Value:    "",
+			Path:     "/",
+			Expires:  time.Unix(0, 0),
+			HttpOnly: false,
+		}
+		http.SetCookie(w, c2)
 
 		fmt.Fprintf(w, "<html>\r\n<head>\r\n")
 		fmt.Fprintf(w, "<link href=\"/proxypublic/bootstrap.css\" rel=\"stylesheet\">\r\n")
-		fmt.Fprintf(w, "<link rel=icon href=\"favicon.ico\" type=\"image/x-icon\">")
+		fmt.Fprintf(w, "<link rel=icon href=\"/proxypublic/logo.svg\" type=\"image/svg+xml\">")
 		fmt.Fprintf(w, "</head>\r\n")
 		fmt.Fprintf(w, "<body><div class=\"container\">\r\n")
 		fmt.Fprintf(w, "<div>\r\n")
 		fmt.Fprintf(w, "%s\r\n", ldapError)
 		fmt.Fprintf(w, "<form action=\"/login\" method=\"post\" class=\"form-signin\">\r\n")
 		fmt.Fprintf(w, "<br><table class=\"table table-borderless mx-auto w-auto\">")
-		fmt.Fprintf(w, "<tr><td><img src=/proxypublic/vscode.svg height=180></td></tr>")
+		fmt.Fprintf(w, "<tr><th>Code Server Gateway</th></tr>\r\n")
+		fmt.Fprintf(w, "<tr><td><img src=/proxypublic/logo.svg height=180></td></tr>")
 		fmt.Fprintf(w, "<tr><th>Login</th></tr>\r\n")
 		fmt.Fprintf(w, "<tr><td><input type=\"text\" name=\"username\" placeholder=\"Username\" required autofocus>\r\n</td></tr>")
 		fmt.Fprintf(w, "<tr><td><input type=\"password\" name=\"password\" placeholder=\"Password\" required>\r\n</td></tr>")
@@ -212,26 +308,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 
 }
 
-func ldapBindTest() {
-	tlsConf := &tls.Config{InsecureSkipVerify: true}
-	ldapServer := os.Getenv("LDAP_SERVER")
-	l, err := ldap.DialTLS("tcp", ldapServer, tlsConf)
-	if err != nil {
-		fmt.Println("Panic! connection with ldap server", err)
-		return
-	}
-	defer l.Close()
-	bindusername := os.Getenv("BIND_USER")
-	bindpassword := os.Getenv("BIND_PASSWORD")
-
-	err = l.Bind(bindusername, bindpassword)
-	if err != nil {
-		fmt.Println("Bind failed:", err)
-	}
-	fmt.Println("Testing ldap-connection with Bind: OK")
-}
-
-func ldapLogin2(user string, password string) (bool, string) {
+func ldapLogin(user string, password string) (bool, string) {
 	if len(user) == 0 || len(password) == 0 {
 		return false, ""
 	}
@@ -245,39 +322,9 @@ func ldapLogin2(user string, password string) (bool, string) {
 		return false, response
 	}
 	defer l.Close()
-	bindusername := os.Getenv("BIND_USER")
-	bindpassword := os.Getenv("BIND_PASSWORD")
-	basedn := os.Getenv("BASE_DN")
 
-	err = l.Bind(bindusername, bindpassword)
-	if err != nil {
-		fmt.Println("Bind:", err)
-		response += fmt.Sprintf("<div class=\"alert alert-danger\" role=\"alert\">Authenticating failed for user %s</div>", user)
-		return false, response
-	}
-
-	searchRequest := ldap.NewSearchRequest(
-		basedn,
-		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
-		fmt.Sprintf("(&(uid=%s))", user),
-		[]string{"dn"},
-		nil,
-	)
-	sr, err := l.Search(searchRequest)
-	if err != nil {
-		fmt.Println("Search:", err)
-		response += fmt.Sprintf("<div class=\"alert alert-danger\" role=\"alert\">Authenticating failed for user %s</div>", user)
-		return false, response
-	}
-
-	if len(sr.Entries) != 1 {
-		fmt.Println("User does not exist or too many entries returned")
-		fmt.Println("sr.Entries:", sr.Entries)
-		response += fmt.Sprintf("<div class=\"alert alert-danger\" role=\"alert\">Authenticating failed for user %s</div>", user)
-		return false, response
-	}
-	userdn := sr.Entries[0].DN
-	err = l.Bind(userdn, password)
+	ldapUserDomain := os.Getenv("LDAP_USER_DOMAIN")
+	err = l.Bind(user+"@"+ldapUserDomain, password)
 	if err != nil {
 		fmt.Println("l.SimpleBind", err)
 		response += fmt.Sprintf("<div class=\"alert alert-danger\" role=\"alert\">Authenticating failed for user %s</div>", user)
@@ -285,11 +332,29 @@ func ldapLogin2(user string, password string) (bool, string) {
 	}
 	return true, response
 }
-func getIcon(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "/proxypublic/favicon.ico")
+
+func checkActive(server string) bool {
+	timeout := time.Duration(1 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err := client.Get("http://vsc" + server + ":8000")
+	if err != nil {
+		return false
+	}
+	if resp.StatusCode == 200 {
+		return true
+	}
+	return false
 }
 
-func tools(w http.ResponseWriter, r *http.Request) {
+type DockerStatusJson struct {
+	Active bool
+	Docker types.Container
+	Logs   string
+}
+
+func dockerstatus(w http.ResponseWriter, r *http.Request, username string) {
 	ctx := context.Background()
 	containerList, err := dockerClient.ContainerList(ctx, types.ContainerListOptions{})
 	if err != nil {
@@ -297,118 +362,96 @@ func tools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, ctr := range containerList {
-		fmt.Println(ctr.Names[0][1:])
-
+		if ctr.Names[0][1:] == "vsc"+username {
+			active := checkActive(username)
+			p := DockerStatusJson{Active: active, Docker: ctr, Logs: getDockerLogs("vsc" + username)}
+			json.NewEncoder(w).Encode(p)
+			return
+		}
 	}
 }
 
-func dockertools(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("SAFE")
-	var username = ""
-	if err == nil {
-		value := make(map[string]string)
-		if err = s.Decode("SAFE", cookie.Value, &value); err == nil {
-			username = value["username"]
-		}
+func dockerrecreate(w http.ResponseWriter, r *http.Request, username string) {
+	containerName := "vsc" + username
+	ctx := context.Background()
+	if err := dockerClient.ContainerStop(ctx, containerName, nil); err != nil {
+		fmt.Println("Panic! ContainerStart:", err)
 	}
-	if len(username) > 0 {
-
-		ctx := context.Background()
-		keys, ok := r.URL.Query()["action"]
-
-		if ok && len(keys[0]) > 0 {
-
-			action := keys[0]
-			containerName := "vsc" + username
-			if action == "restart" {
-				if err := dockerClient.ContainerStop(ctx, containerName, nil); err != nil {
-					fmt.Println("Panic! ContainerStart:", err)
-				}
-				if err := dockerClient.ContainerStart(ctx, containerName, types.ContainerStartOptions{}); err != nil {
-					fmt.Println("Panic! ContainerStart:", err)
-				}
-				fmt.Println("##################################3 restarted")
-			}
-			if action == "start" {
-				if err := dockerClient.ContainerStart(ctx, containerName, types.ContainerStartOptions{}); err != nil {
-					fmt.Println("Panic! ContainerStart:", err)
-				}
-				fmt.Println("##################################3 Start")
-			}
-			if action == "stop" {
-				if err := dockerClient.ContainerStop(ctx, containerName, nil); err != nil {
-					fmt.Println("Panic! ContainerStart:", err)
-				}
-				fmt.Println("##################################3 Stop")
-			}
-			if action == "recreate" {
-				if err := dockerClient.ContainerStop(ctx, containerName, nil); err != nil {
-					fmt.Println("Panic! ContainerStart:", err)
-				}
-				removeOptions := types.ContainerRemoveOptions{
-					RemoveVolumes: true,
-					Force:         true,
-				}
-				if err := dockerClient.ContainerRemove(ctx, containerName, removeOptions); err != nil {
-					fmt.Println("Panic! ContainerStart:", err)
-				}
-				createContainer(username)
-				fmt.Println("##################################3 reCreated")
-			}
-
-		}
-
-		fmt.Fprintf(w, "<html><head><link href=/proxypublic/bootstrap.css rel=stylesheet></head>")
-		fmt.Fprint(w, "<table class=\"table table-hover\"><tr>")
-		fmt.Fprintln(w, "<th><a href=/logout>Logout</a></td></th>")
-		containerList, err := dockerClient.ContainerList(ctx, types.ContainerListOptions{All: true})
-		if err != nil {
-			fmt.Println("Panic! dockerClient.ContainerList:", err)
-			return
-		}
-		for _, ctr := range containerList {
-			//      fmt.Println(ctr)
-
-			/*
-				b, err := json.Marshal(ctr)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}*/
-			if ctr.Names[0][1:] == "vsc"+username {
-				fmt.Fprintf(w, "<tr>")
-				fmt.Fprintf(w, "<th></th>")
-				fmt.Fprintf(w, "<th></th>")
-				fmt.Fprintf(w, "<th></th>")
-				fmt.Fprintf(w, "<th>Image</th>")
-				fmt.Fprintf(w, "<th>State</th>")
-				fmt.Fprintf(w, "<th>Status</th>")
-				fmt.Fprintf(w, "<th>Image</th>")
-				fmt.Fprintf(w, "<th>Created</th>")
-				fmt.Fprintf(w, "</tr>")
-				fmt.Fprintf(w, "<tr>")
-				fmt.Fprintln(w, "<td><a href=/dockertools?action=restart>Restart</a></td>")
-				fmt.Fprintln(w, "<td><a href=/dockertools?action=recreate>ReCreate</a></td>")
-				fmt.Fprintln(w, "<td><a href=/>Connect</a></td>")
-				fmt.Fprintf(w, "<td>%v</td>", ctr.Image)
-				fmt.Fprintf(w, "<td>%v</td>", ctr.State)
-				fmt.Fprintf(w, "<td>%v</td>", ctr.Status)
-				fmt.Fprintf(w, "<td>%v</td>", ctr.Image)
-				fmt.Fprintf(w, "<td>%v</td>", time.Unix(ctr.Created, 0))
-				fmt.Fprintf(w, "</tr>")
-				//				fmt.Fprintf(w, "<tr><td colspan=4>%v</td></tr>", string(b))
-			}
-
-		}
-		fmt.Fprintf(w, "</table>")
-	} else {
-		login(w, r)
+	removeOptions := types.ContainerRemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
 	}
+	if err := dockerClient.ContainerRemove(ctx, containerName, removeOptions); err != nil {
+		fmt.Println("Panic! ContainerStart:", err)
+	}
+	createContainer(username)
+}
+
+func dockerrestart(w http.ResponseWriter, r *http.Request, username string) {
+	containerName := "vsc" + username
+	ctx := context.Background()
+	if err := dockerClient.ContainerStop(ctx, containerName, nil); err != nil {
+		fmt.Println("Panic! ContainerStart:", err)
+	}
+	if err := dockerClient.ContainerStart(ctx, containerName, types.ContainerStartOptions{}); err != nil {
+		fmt.Println("Panic! ContainerStart:", err)
+	}
+}
+
+type SecurityHandle func(w http.ResponseWriter, r *http.Request, username string)
+
+func Security(next SecurityHandle) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("SAFE")
+		var username = ""
+		if err == nil {
+			value := make(map[string]string)
+			if err = s.Decode("SAFE", cookie.Value, &value); err == nil {
+				username = value["username"]
+			}
+		}
+		if len(username) > 0 {
+			next(w, r, username)
+		} else {
+			login(w, r)
+		}
+
+	})
+}
+
+func dockertools(w http.ResponseWriter, r *http.Request, username string) {
+	http.ServeFile(w, r, "index.html")
+}
+
+func defaultTransportDialContext(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	return dialer.DialContext
+}
+
+var DefaultTransport http.RoundTripper = &http.Transport{
+	DialContext: defaultTransportDialContext(&net.Dialer{
+		Timeout:   30000 * time.Second,
+		KeepAlive: 30000 * time.Second,
+	}),
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          10000,
+	IdleConnTimeout:       90000 * time.Second,
+	TLSHandshakeTimeout:   10000 * time.Second,
+	ExpectContinueTimeout: 10000 * time.Second,
 }
 
 func main() {
 	time.Sleep(1 * time.Second)
-	ldapBindTest()
+	pullContainer(os.Getenv("CODE_SERVER_IMAGE"))
+
+	dockerMods := os.Getenv("DOCKER_MODS")
+	if len(dockerMods) > 0 {
+		mods := strings.Split(dockerMods, "|")
+		for _, mod := range mods {
+			fmt.Println("Downloading image:", mod)
+			pullContainer(mod)
+		}
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -423,7 +466,7 @@ func main() {
 		if len(username) > 0 {
 			director := func(req *http.Request) {
 				req.URL.Scheme = "http"
-				req.URL.Host = "vsc" + username
+				req.URL.Host = "vsc" + username + ":8000"
 			}
 
 			proxy := &httputil.ReverseProxy{Director: director}
@@ -434,21 +477,24 @@ func main() {
 		}
 	})
 
-	mux.HandleFunc("/logout", login)
-	mux.HandleFunc("/tools", tools)
-	mux.HandleFunc("/dockertools", dockertools)
+	mux.HandleFunc("/disconnect", login)
+	mux.Handle("/dockerrecreate", Security(dockerrecreate))
+	mux.Handle("/dockerrestart", Security(dockerrestart))
+	mux.Handle("/dockertools", Security(dockertools))
+	mux.Handle("/logout", Security(dockertools)) //This is Sign out from VS
+	mux.Handle("/dockerstatus", Security(dockerstatus))
+
+	fileexplorervsc := http.FileServer(http.Dir("/data"))
+	mux.Handle("/fileexplorervsc/", Security(DataView(http.StripPrefix("/fileexplorervsc", fileexplorervsc))))
 
 	fileServerPublic := http.FileServer(http.Dir("/proxypublic"))
 	mux.Handle("/proxypublic/", http.StripPrefix("/proxypublic", fileServerPublic))
-	mux.HandleFunc("/favicon.ico", getIcon)
 
 	server_domain := os.Getenv("SERVER_DOMAIN")
 	acme_server := os.Getenv("ACME_SERVER")
 
 	if len(server_domain) > 0 && len(acme_server) > 0 {
-		certmagic.DefaultACME.Agreed = true
-		certmagic.DefaultACME.CA = acme_server
-		log.Fatal(certmagic.HTTPS([]string{server_domain}, mux))
+		log.Fatal(HTTPSACME([]string{server_domain}, mux, acme_server))
 	} else {
 		fmt.Printf("unencrypted server\n")
 		err := http.ListenAndServe(":80", mux)
