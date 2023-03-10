@@ -13,18 +13,16 @@ services:
       BIND_PASSWORD: "mysecret"
       BIND_USER: "cn=serviceuser,ou=svcaccts,dc=glauth,dc=com"
       LDAP_SERVER: "ldapserver:389"
+      LDAP_USER_DOMAIN: "example.com"
       HASH_SALT: "123456789"
-      CODE_SERVER_IMAGE: "linuxserver/codeserver"
+      CODE_SERVER_IMAGE: "lscr.io/linuxserver/code-server:latest"
     volumes:
      - /var/run/docker.sock:/var/run/docker.sock
      - /data/:/data/
     networks:
       codeserver:
  ldapserver:
-    image: test/ldap
-    ports:
-     - 389:389
-     - 5555:5555
+    image: define42/ldap
     networks:
       codeserver:
 networks:
