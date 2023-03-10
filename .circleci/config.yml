@@ -1,0 +1,29 @@
+version: 2
+jobs:
+  publish-latest:
+    environment:
+      IMAGE_NAME: define42/codeservergateway
+    docker:
+      - image: circleci/buildpack-deps:stretch
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Publish Docker Image to Docker Hub
+          command: |
+            export RELEASE_DATE=$(date +"%Y.%m.%d")
+            echo $RELEASE_DATE
+            docker images
+            echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            docker build -t $IMAGE_NAME:latest .
+            docker push $IMAGE_NAME:latest
+            docker build -t $IMAGE_NAME:$RELEASE_DATE .
+            docker push $IMAGE_NAME:$RELEASE_DATE
+workflows:
+  version: 2
+  build-master:
+    jobs:
+      - publish-latest:
+          filters:
+            branches:
+              only: main
