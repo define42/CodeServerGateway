@@ -9,13 +9,6 @@ import (
 
 	"encoding/json"
 	"fmt"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/go-ldap/ldap/v3"
-	"github.com/gorilla/securecookie"
 	"io"
 	"io/ioutil"
 	"log"
@@ -25,12 +18,41 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/client"
+	"github.com/go-ldap/ldap/v3"
+	"github.com/gorilla/securecookie"
 )
 
 func DockerClient() *client.Client {
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		panic(err)
+	}
+
+	dockerUsername := os.Getenv("DOCKER_USERNAME")
+	dockerPassword := os.Getenv("DOCKER_PASSWORD")
+	dockerServer := os.Getenv("DOCKER_SERVER")
+
+	if len(dockerServer) > 0 {
+		fmt.Println("dockerUsername:", dockerUsername)
+		fmt.Println("dockerPassword:", dockerPassword)
+		fmt.Println("dockerServer", dockerServer)
+
+		authConfig := types.AuthConfig{
+			Username:      dockerUsername,
+			Password:      dockerPassword,
+			ServerAddress: dockerServer,
+		}
+		ok, err := cli.RegistryLogin(context.Background(), authConfig)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("RegistryLogin:", ok.Status)
 	}
 	return cli
 }
