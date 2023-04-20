@@ -473,7 +473,10 @@ var DefaultTransport http.RoundTripper = &http.Transport{
 
 func main() {
 	time.Sleep(1 * time.Second)
-	pullContainer(os.Getenv("CODE_SERVER_IMAGE"))
+	disableDownload := os.Getenv("CODE_SERVER_IMAGE_DISABLE")
+	if len(disableDownload) == 0 {
+		pullContainer(os.Getenv("CODE_SERVER_IMAGE"))
+	}
 
 	dockerMods := os.Getenv("DOCKER_MODS")
 	if len(dockerMods) > 0 {
