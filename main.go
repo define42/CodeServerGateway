@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 
 	"encoding/json"
@@ -28,7 +29,7 @@ import (
 	"github.com/gorilla/securecookie"
 )
 
-func DockerClient() *client.Client {
+func DockerClient() (*client.Client, string) {
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		panic(err)
@@ -52,12 +53,21 @@ func DockerClient() *client.Client {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("RegistryLogin:", ok.Status)
+
+		encodedJSON, err := json.Marshal(authConfig)
+		if err != nil {
+			panic(err)
+		}
+
+		authStr := base64.URLEncoding.EncodeToString(encodedJSON)
+
+		fmt.Println("RegistryLogin:", ok.Status, " authStr:", authStr)
+		return cli, authStr
 	}
-	return cli
+	return cli, string("")
 }
 
-var dockerClient = DockerClient()
+var dockerClient, IdentityToken = DockerClient()
 
 func getDockerLogs(cid string) string {
 
@@ -104,7 +114,7 @@ func doContainerExist(name string) bool {
 
 func pullContainer(imageName string) {
 
-	events, err := dockerClient.ImagePull(context.Background(), imageName, types.ImagePullOptions{})
+	events, err := dockerClient.ImagePull(context.Background(), imageName, types.ImagePullOptions{RegistryAuth: IdentityToken})
 	if err != nil {
 		panic(err)
 	}
