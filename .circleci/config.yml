@@ -11,7 +11,7 @@ jobs:
       - run:
           name: Publish Docker Image to Docker Hub
           command: |
-            export RELEASE_DATE=$(date +"%Y.%m.%d")
+            export RELEASE_DATE=$(date +"%Y.%m.%d.%H%M")
             echo $RELEASE_DATE
             docker images
             echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
