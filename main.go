@@ -177,6 +177,17 @@ func createContainer(name string) {
 		EndpointsConfig: endpointConfigs,
 	}
 
+	dns := []string{}
+
+	dockerDnsServers := os.Getenv("DNS_SERVERS")
+	if len(dockerDnsServers) > 0 {
+		dns_servers := strings.Split(dockerDnsServers, ",")
+		for _, dns_server := range dns_servers {
+			fmt.Println("Added DNS server:", dns_server)
+			dns = append(dns, dns_server)
+		}
+	}
+
 	_, err = dockerClient.ContainerCreate(ctx,
 		&container.Config{
 			Tty:      true,
@@ -186,6 +197,7 @@ func createContainer(name string) {
 		},
 		&container.HostConfig{
 			Privileged:    true,
+			DNS:           dns,
 			RestartPolicy: container.RestartPolicy{Name: "always"},
 			Mounts: []mount.Mount{
 				{
