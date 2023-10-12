@@ -205,6 +205,13 @@ func createContainer(name string) {
 					Source: userDataFolder,
 					Target: "/config/",
 				},
+				{
+					Type:   mount.TypeBind,
+					Source: "/data/ca/",
+					Target: "/data/ca/",
+					ReadOnly: true,
+				},
+				
 			}},
 		&networkingConfig,
 		nil,
