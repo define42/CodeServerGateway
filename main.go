@@ -491,6 +491,12 @@ var DefaultTransport http.RoundTripper = &http.Transport{
 }
 
 func main() {
+	err := os.MkdirAll("/data/ca/", 0777)
+	
+	if err != nil {
+		fmt.Println("Panic! create folder /data/ca/:", err)
+	}
+	
 	time.Sleep(1 * time.Second)
 	disableDownload := os.Getenv("CODE_SERVER_IMAGE_DISABLE")
 	if len(disableDownload) == 0 {
