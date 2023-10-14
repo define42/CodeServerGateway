@@ -206,12 +206,11 @@ func createContainer(name string) {
 					Target: "/config/",
 				},
 				{
-					Type:   mount.TypeBind,
-					Source: "/data/ca/",
-					Target: "/data/ca/",
+					Type:     mount.TypeBind,
+					Source:   "/data/ca/",
+					Target:   "/data/ca/",
 					ReadOnly: true,
 				},
-				
 			}},
 		&networkingConfig,
 		nil,
@@ -492,11 +491,11 @@ var DefaultTransport http.RoundTripper = &http.Transport{
 
 func main() {
 	err := os.MkdirAll("/data/ca/", 0777)
-	
+
 	if err != nil {
 		fmt.Println("Panic! create folder /data/ca/:", err)
 	}
-	
+
 	time.Sleep(1 * time.Second)
 	disableDownload := os.Getenv("CODE_SERVER_IMAGE_DISABLE")
 	if len(disableDownload) == 0 {
@@ -543,9 +542,6 @@ func main() {
 	mux.Handle("/dockertools", Security(dockertools))
 	mux.Handle("/logout", Security(dockertools)) //This is Sign out from VS
 	mux.Handle("/dockerstatus", Security(dockerstatus))
-
-	fileexplorervsc := http.FileServer(http.Dir("/data"))
-	mux.Handle("/fileexplorervsc/", Security(DataView(http.StripPrefix("/fileexplorervsc", fileexplorervsc))))
 
 	fileServerPublic := http.FileServer(http.Dir("/proxypublic"))
 	mux.Handle("/proxypublic/", http.StripPrefix("/proxypublic", fileServerPublic))
