@@ -1,7 +1,7 @@
 version: "3.5"
 services:
  gatekeeper:
-    build: .
+    image: define42/codeservergateway
     ports:
       - 8000:80
       - 443:443
@@ -16,6 +16,7 @@ services:
       LDAP_USER_DOMAIN: "example.com"
       HASH_SALT: "123456789"
       CODE_SERVER_IMAGE: "lscr.io/linuxserver/code-server:latest"
+      DOCKER_MODS: define42/mods-vim|define42/mods-ca|linuxserver/mods:universal-docker-in-docker|linuxserver/mods:code-server-golang|linuxserver/mods:code-server-python3|linuxserver/mods:code-server-java11
     volumes:
      - /var/run/docker.sock:/var/run/docker.sock
      - /data/:/data/
