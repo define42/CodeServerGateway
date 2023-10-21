@@ -27,6 +27,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/gorilla/securecookie"
+	"github.com/sirupsen/logrus"
+	"github.com/snowzach/rotatefilehook"
 )
 
 func DockerClient() (*client.Client, string) {
@@ -270,92 +272,118 @@ func login(w http.ResponseWriter, req *http.Request) {
 	}
 	username := req.Form.Get("username")
 	password := req.Form.Get("password")
+	ldapError := ""
+	if len(username) > 0 && len(password) > 0 {
 
-	ldapok, ldapError := ldapLogin(username, password)
+		ldapok, ldapErrorTmp := ldapLogin(username, password)
+		ldapError = ldapErrorTmp
 
-	if ldapok {
-		fmt.Printf("Login username:%s\n", username)
-		if doContainerExist(username) {
-			fmt.Println("Container for:", username, " exists")
-		} else {
-			fmt.Println("Creating container for:", username)
-			createContainer(username)
-			time.Sleep(5 * time.Second)
-		}
+		if ldapok {
+			fmt.Printf("Login username:%s\n", username)
 
-		value := map[string]string{
-			"username": username,
-			"password": password,
-		}
-		encoded, err := s.Encode("SAFE", value)
-		if err == nil {
-			cookie := &http.Cookie{
-				Name:     "SAFE",
-				Value:    encoded,
-				Path:     "/",
-				Secure:   false,
-				HttpOnly: false,
+			if doContainerExist(username) {
+				fmt.Println("Container for:", username, " exists")
+			} else {
+				fmt.Println("Creating container for:", username)
+				createContainer(username)
+				time.Sleep(5 * time.Second)
 			}
-			fmt.Printf("Cookie added \n")
-			http.SetCookie(w, cookie)
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-		expiration := time.Now().Add(365 * 24 * time.Hour)
-		cookie := http.Cookie{Name: "key", Value: passwordSHA256(username), Expires: expiration}
-		http.SetCookie(w, &cookie)
-		cookie2 := http.Cookie{Name: "code-server-session", Value: passwordSHA256(username), Expires: expiration}
-		http.SetCookie(w, &cookie2)
-		http.Redirect(w, req, "/dockertools", 307)
-		return
-	} else {
-		c := &http.Cookie{
-			Name:     "SAFE",
-			Value:    "",
-			Path:     "/",
-			Expires:  time.Unix(0, 0),
-			HttpOnly: false,
-		}
-		http.SetCookie(w, c)
-		c1 := &http.Cookie{
-			Name:     "code-server-session",
-			Value:    "",
-			Path:     "/",
-			Expires:  time.Unix(0, 0),
-			HttpOnly: false,
-		}
-		http.SetCookie(w, c1)
-		c2 := &http.Cookie{
-			Name:     "key",
-			Value:    "",
-			Path:     "/",
-			Expires:  time.Unix(0, 0),
-			HttpOnly: false,
-		}
-		http.SetCookie(w, c2)
 
-		fmt.Fprintf(w, "<html>\r\n<head>\r\n")
-		fmt.Fprintf(w, "<link href=\"/proxypublic/bootstrap.css\" rel=\"stylesheet\">\r\n")
-		fmt.Fprintf(w, "<link rel=icon href=\"/proxypublic/logo.svg\" type=\"image/svg+xml\">")
-		fmt.Fprintf(w, "</head>\r\n")
-		fmt.Fprintf(w, "<body><div class=\"container\">\r\n")
-		fmt.Fprintf(w, "<div>\r\n")
-		fmt.Fprintf(w, "%s\r\n", ldapError)
-		fmt.Fprintf(w, "<center><br><h1><font color=\"#0065A9\">Visual Studio Code Gateway</font></h1>")
-		fmt.Fprintf(w, "<br><img src=/proxypublic/logo.jpg height=180>\r\n")
-		fmt.Fprintf(w, "<br><form action=\"/login\" method=\"post\" class=\"form-signin\">\r\n")
-		fmt.Fprintf(w, "<br><table class=\"table table-borderless mx-auto w-auto\">")
-		fmt.Fprintf(w, "<tr><th>Login</th></tr>\r\n")
-		fmt.Fprintf(w, "<tr><td><input type=\"text\" name=\"username\" placeholder=\"Username\" required autofocus>\r\n</td></tr>")
-		fmt.Fprintf(w, "<tr><td><input type=\"password\" name=\"password\" placeholder=\"Password\" required>\r\n</td></tr>")
-		fmt.Fprintf(w, "<tr><td><button class=\"btn btn-sm btn-dark float-right\" type=\"submit\">Login</button>\r\n</td></tr>")
-		fmt.Fprintf(w, "</table>\r\n")
-		fmt.Fprintf(w, "</form>\r\n")
-		fmt.Fprintf(w, "</div>\r\n")
-		fmt.Fprintf(w, "</body>\r\n")
-		fmt.Fprintf(w, "</html>\r\n")
+			value := map[string]string{
+				"username": username,
+				"password": password,
+			}
+			encoded, err := s.Encode("SAFE", value)
+			if err == nil {
+				cookie := &http.Cookie{
+					Name:     "SAFE",
+					Value:    encoded,
+					Path:     "/",
+					Secure:   false,
+					HttpOnly: false,
+				}
+				fmt.Printf("Cookie added \n")
+				http.SetCookie(w, cookie)
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
+			expiration := time.Now().Add(365 * 24 * time.Hour)
+			cookie := http.Cookie{Name: "key", Value: passwordSHA256(username), Expires: expiration}
+			http.SetCookie(w, &cookie)
+			cookie2 := http.Cookie{Name: "code-server-session", Value: passwordSHA256(username), Expires: expiration}
+			http.SetCookie(w, &cookie2)
+			http.Redirect(w, req, "/dockertools", 307)
+
+			logrus.WithFields(logrus.Fields{
+				"Event":    "LoginSuccess",
+				"Username": username,
+				"ClientIP": req.RemoteAddr,
+			}).Info("")
+
+			return
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"Event":    "LoginFailed",
+				"Username": username,
+				"ClientIP": req.RemoteAddr,
+			}).Info("")
+		}
 	}
+	found, username := getUsernameFromCookie(req)
+	if found && len(username) > 0 {
+		logrus.WithFields(logrus.Fields{
+			"Event":    "Logout",
+			"Username": username,
+			"ClientIP": req.RemoteAddr,
+		}).Info("")
+	}
+
+	c := &http.Cookie{
+		Name:     "SAFE",
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false,
+	}
+	http.SetCookie(w, c)
+	c1 := &http.Cookie{
+		Name:     "code-server-session",
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false,
+	}
+	http.SetCookie(w, c1)
+	c2 := &http.Cookie{
+		Name:     "key",
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false,
+	}
+	http.SetCookie(w, c2)
+
+	fmt.Fprintf(w, "<html>\r\n<head>\r\n")
+	fmt.Fprintf(w, "<link href=\"/proxypublic/bootstrap.css\" rel=\"stylesheet\">\r\n")
+	fmt.Fprintf(w, "<link rel=icon href=\"/proxypublic/logo.svg\" type=\"image/svg+xml\">")
+	fmt.Fprintf(w, "</head>\r\n")
+	fmt.Fprintf(w, "<body><div class=\"container\">\r\n")
+	fmt.Fprintf(w, "<div>\r\n")
+	fmt.Fprintf(w, "%s\r\n", ldapError)
+	fmt.Fprintf(w, "<center><br><h1><font color=\"#0065A9\">Visual Studio Code Gateway</font></h1>")
+	fmt.Fprintf(w, "<br><img src=/proxypublic/logo.jpg height=180>\r\n")
+	fmt.Fprintf(w, "<br><form action=\"/login\" method=\"post\" class=\"form-signin\">\r\n")
+	fmt.Fprintf(w, "<br><table class=\"table table-borderless mx-auto w-auto\">")
+	fmt.Fprintf(w, "<tr><th>Login</th></tr>\r\n")
+	fmt.Fprintf(w, "<tr><td><input type=\"text\" name=\"username\" placeholder=\"Username\" required autofocus>\r\n</td></tr>")
+	fmt.Fprintf(w, "<tr><td><input type=\"password\" name=\"password\" placeholder=\"Password\" required>\r\n</td></tr>")
+	fmt.Fprintf(w, "<tr><td><button class=\"btn btn-sm btn-dark float-right\" type=\"submit\">Login</button>\r\n</td></tr>")
+	fmt.Fprintf(w, "</table>\r\n")
+	fmt.Fprintf(w, "</form>\r\n")
+	fmt.Fprintf(w, "</div>\r\n")
+	fmt.Fprintf(w, "</body>\r\n")
+	fmt.Fprintf(w, "</html>\r\n")
 
 }
 
@@ -449,19 +477,25 @@ func dockerrestart(w http.ResponseWriter, r *http.Request, username string) {
 	}
 }
 
+func getUsernameFromCookie(r *http.Request) (bool, string) {
+	cookie, err := r.Cookie("SAFE")
+	if err == nil {
+		value := make(map[string]string)
+		if err = s.Decode("SAFE", cookie.Value, &value); err == nil {
+			return true, value["username"]
+		}
+	}
+	return false, ""
+}
+
 type SecurityHandle func(w http.ResponseWriter, r *http.Request, username string)
 
 func Security(next SecurityHandle) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("SAFE")
-		var username = ""
-		if err == nil {
-			value := make(map[string]string)
-			if err = s.Decode("SAFE", cookie.Value, &value); err == nil {
-				username = value["username"]
-			}
-		}
-		if len(username) > 0 {
+
+		found, username := getUsernameFromCookie(r)
+
+		if found && len(username) > 0 {
 			next(w, r, username)
 		} else {
 			login(w, r)
@@ -512,7 +546,26 @@ func pullDockerImages() {
 }
 
 func main() {
-	err := os.MkdirAll("/data/ca/", 0777)
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetOutput(os.Stdout)
+	logrus.SetLevel(logrus.InfoLevel)
+
+	rotateFileHook, err := rotatefilehook.NewRotateFileHook(rotatefilehook.RotateFileConfig{
+		Filename:   "/data/log/vsc.log",
+		MaxSize:    10,  // megabytes
+		MaxBackups: 30,  // amouts
+		MaxAge:     365, //days
+		Level:      logrus.InfoLevel,
+		Formatter: &logrus.JSONFormatter{
+			TimestampFormat: time.RFC822,
+		},
+	})
+	if err != nil {
+		logrus.Fatalf("Failed to initialize file rotate hook: %v", err)
+	}
+	logrus.AddHook(rotateFileHook)
+
+	err = os.MkdirAll("/data/ca/", 0777)
 
 	if err != nil {
 		fmt.Println("Panic! create folder /data/ca/:", err)
