@@ -138,7 +138,8 @@ func pullContainer(imageName string) {
 				break
 			}
 
-			panic(err)
+			fmt.Println(err)
+			break
 		}
 
 		fmt.Printf("EVENT: %+v\n", event)
@@ -489,6 +490,27 @@ var DefaultTransport http.RoundTripper = &http.Transport{
 	ExpectContinueTimeout: 10000 * time.Second,
 }
 
+func pullDockerImages() {
+
+	for {
+		disableDownload := os.Getenv("CODE_SERVER_IMAGE_DISABLE")
+		if len(disableDownload) == 0 {
+			pullContainer(os.Getenv("CODE_SERVER_IMAGE"))
+		}
+
+		dockerMods := os.Getenv("DOCKER_MODS")
+		if len(dockerMods) > 0 {
+			mods := strings.Split(dockerMods, "|")
+			for _, mod := range mods {
+				fmt.Println("Downloading image:", mod)
+				pullContainer(mod)
+			}
+		}
+		time.Sleep(600 * time.Second)
+	}
+
+}
+
 func main() {
 	err := os.MkdirAll("/data/ca/", 0777)
 
@@ -497,19 +519,7 @@ func main() {
 	}
 
 	time.Sleep(1 * time.Second)
-	disableDownload := os.Getenv("CODE_SERVER_IMAGE_DISABLE")
-	if len(disableDownload) == 0 {
-		pullContainer(os.Getenv("CODE_SERVER_IMAGE"))
-	}
-
-	dockerMods := os.Getenv("DOCKER_MODS")
-	if len(dockerMods) > 0 {
-		mods := strings.Split(dockerMods, "|")
-		for _, mod := range mods {
-			fmt.Println("Downloading image:", mod)
-			pullContainer(mod)
-		}
-	}
+	go pullDockerImages()
 
 	mux := http.NewServeMux()
 
