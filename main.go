@@ -263,7 +263,7 @@ func generateSecureCookie() *securecookie.SecureCookie {
 	return s
 }
 
-var s = generateSecureCookie()
+var secureGatewayCookie = generateSecureCookie()
 
 func login(w http.ResponseWriter, req *http.Request) {
 	err := req.ParseForm()
@@ -293,7 +293,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 				"username": username,
 				"password": password,
 			}
-			encoded, err := s.Encode("SAFE", value)
+			encoded, err := secureGatewayCookie.Encode("SAFE", value)
 			if err == nil {
 				cookie := &http.Cookie{
 					Name:     "SAFE",
@@ -481,7 +481,7 @@ func getUsernameFromCookie(r *http.Request) (bool, string) {
 	cookie, err := r.Cookie("SAFE")
 	if err == nil {
 		value := make(map[string]string)
-		if err = s.Decode("SAFE", cookie.Value, &value); err == nil {
+		if err = secureGatewayCookie.Decode("SAFE", cookie.Value, &value); err == nil {
 			return true, value["username"]
 		}
 	}
@@ -542,7 +542,16 @@ func pullDockerImages() {
 		}
 		time.Sleep(600 * time.Second)
 	}
+}
 
+func proxyForward(w http.ResponseWriter, r *http.Request, username string) {
+	director := func(req *http.Request) {
+		req.URL.Scheme = "http"
+		req.URL.Host = "vsc" + username + ":8000"
+	}
+	proxy := &httputil.ReverseProxy{Director: director}
+
+	proxy.ServeHTTP(w, r)
 }
 
 func main() {
@@ -576,28 +585,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("SAFE")
-		var username = ""
-		if err == nil {
-			value := make(map[string]string)
-			if err = s.Decode("SAFE", cookie.Value, &value); err == nil {
-				username = value["username"]
-			}
-		}
-		if len(username) > 0 {
-			director := func(req *http.Request) {
-				req.URL.Scheme = "http"
-				req.URL.Host = "vsc" + username + ":8000"
-			}
-
-			proxy := &httputil.ReverseProxy{Director: director}
-
-			proxy.ServeHTTP(w, r)
-		} else {
-			login(w, r)
-		}
-	})
+	mux.Handle("/", Security(proxyForward))
 
 	mux.HandleFunc("/disconnect", login)
 	mux.Handle("/dockerrecreate", Security(dockerrecreate))
