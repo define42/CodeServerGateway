@@ -364,7 +364,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 	}
 	http.SetCookie(w, c2)
 
-	fmt.Fprintf(w, "<html>\r\n<head>\r\n")
+	fmt.Fprintf(w, "<html>\r\n<head><title>VSC Gateway(v.RELEASE_DATE)</title>\r\n")
 	fmt.Fprintf(w, "<link href=\"/proxypublic/bootstrap.css\" rel=\"stylesheet\">\r\n")
 	fmt.Fprintf(w, "<link rel=icon href=\"/proxypublic/logo.svg\" type=\"image/svg+xml\">")
 	fmt.Fprintf(w, "</head>\r\n")

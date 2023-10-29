@@ -13,6 +13,7 @@ jobs:
           command: |
             export RELEASE_DATE=$(date +"%Y.%m.%d.%H%M")
             echo $RELEASE_DATE
+            sed -i s/RELEASE_DATE/$RELEASE_DATE/g main.go
             docker images
             echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
             docker build -t $IMAGE_NAME:latest .
