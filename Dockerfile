@@ -7,7 +7,6 @@ RUN go mod download
 RUN go get gatekeeper
 COPY main.go main.go
 COPY acme.go acme.go
-COPY dataview.go dataview.go
 RUN CGO_ENABLED=0 go build -o /main
 RUN chmod 777 /main
 
