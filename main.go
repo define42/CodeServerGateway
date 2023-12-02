@@ -210,7 +210,7 @@ func createContainer(name string) {
 			RestartPolicy: container.RestartPolicy{Name: "always"},
 			CapAdd:        []string{"sys_admin", "mknod"},
 			SecurityOpt: []string{
-				"seccomp=//usr//share//containers//seccomp.json", // Example: Set Seccomp profile to unconfined
+				"seccomp=unconfined", // Example: Set Seccomp profile to unconfined
 				"label=disable", // Example: Set AppArmor profile
 			},
 			/*
