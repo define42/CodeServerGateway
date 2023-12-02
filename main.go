@@ -208,7 +208,7 @@ func createContainer(name string) {
 			Privileged:    privileged,
 			DNS:           dns,
 			RestartPolicy: container.RestartPolicy{Name: "always"},
-			CapAdd:        []string{"sys_admin", "mknod", "cap_setuid", "cap_setgid", "sys_chroot", "setfcap"},
+			CapAdd:        []string{"CAP_SYS_ADMIN", "CAP_MKNOD", "CAP_SETUID", "CAP_SETGID", "CAP_SYS_CHROOT", "CAP_SETFCAP"},
 			SecurityOpt: []string{
 				"seccomp=unconfined", // Example: Set Seccomp profile to unconfined
 				"label=disable",      // Example: Set AppArmor profile
