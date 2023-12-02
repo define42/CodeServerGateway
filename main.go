@@ -213,17 +213,15 @@ func createContainer(name string) {
 				"seccomp=unconfined", // Example: Set Seccomp profile to unconfined
 				"label=disable", // Example: Set AppArmor profile
 			},
-			/*
 			Resources: container.Resources{
 				Devices: []container.DeviceMapping{
 					{
 						PathOnHost:        "/dev/fuse",
 						PathInContainer:   "/dev/fuse",
-						CgroupPermissions: "rwm",
+			//			CgroupPermissions: "rwm",
 					},
 				},
 			},
-			*/
 			// Add other host configurations here
 
 			Mounts: []mount.Mount{
