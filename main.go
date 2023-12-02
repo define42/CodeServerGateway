@@ -190,6 +190,11 @@ func createContainer(name string) {
 			dns = append(dns, dns_server)
 		}
 	}
+	privileged := true
+	if(os.Getenv("DOCKER_PRIVILEGED") == "false") {
+		fmt.Println("DOCKER_PRIVILEGED == false")
+		privileged = false
+	}
 
 	_, err = dockerClient.ContainerCreate(ctx,
 		&container.Config{
@@ -199,7 +204,7 @@ func createContainer(name string) {
 			Env:      []string{"GITUSER=" + name, "PUID=1000", "PGID=1000", "TZ=Europe/Copenhagen", "HASHED_PASSWORD=" + passwordSHA256(name), "SUDO_PASSWORD=password", "PORT=8000", "DOCKER_MODS=" + os.Getenv("DOCKER_MODS")},
 		},
 		&container.HostConfig{
-			Privileged:    true,
+			Privileged:    privileged,
 			DNS:           dns,
 			RestartPolicy: container.RestartPolicy{Name: "always"},
 			Mounts: []mount.Mount{
