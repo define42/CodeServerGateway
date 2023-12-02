@@ -191,15 +191,16 @@ func createContainer(name string) {
 		}
 	}
 	privileged := true
-	if(os.Getenv("DOCKER_PRIVILEGED") == "false") {
+	if os.Getenv("DOCKER_PRIVILEGED") == "false" {
 		fmt.Println("DOCKER_PRIVILEGED == false")
 		privileged = false
 	}
 
 	_, err = dockerClient.ContainerCreate(ctx,
 		&container.Config{
-			Tty:      true,
-			Image:    os.Getenv("CODE_SERVER_IMAGE"),
+			Tty:   true,
+			Image: os.Getenv("CODE_SERVER_IMAGE"),
+
 			Hostname: containerName,
 			Env:      []string{"GITUSER=" + name, "PUID=1000", "PGID=1000", "TZ=Europe/Copenhagen", "HASHED_PASSWORD=" + passwordSHA256(name), "SUDO_PASSWORD=password", "PORT=8000", "DOCKER_MODS=" + os.Getenv("DOCKER_MODS")},
 		},
@@ -207,6 +208,22 @@ func createContainer(name string) {
 			Privileged:    privileged,
 			DNS:           dns,
 			RestartPolicy: container.RestartPolicy{Name: "always"},
+			CapAdd:        []string{"sys_admin", "mknod"},
+			SecurityOpt: []string{
+				"seccomp=/usr/share/containers/seccomp.json", // Example: Set Seccomp profile to unconfined
+				"label=disable", // Example: Set AppArmor profile
+			},
+			Resources: container.Resources{
+				Devices: []container.DeviceMapping{
+					{
+						PathOnHost:        "/dev/fuse",
+						PathInContainer:   "/dev/fuse",
+						CgroupPermissions: "rwm",
+					},
+				},
+			},
+			// Add other host configurations here
+
 			Mounts: []mount.Mount{
 				{
 					Type:   mount.TypeBind,
