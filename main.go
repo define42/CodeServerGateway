@@ -218,7 +218,7 @@ func createContainer(name string) {
 					{
 						PathOnHost:        "/dev/fuse",
 						PathInContainer:   "/dev/fuse",
-			//			CgroupPermissions: "rwm",
+						CgroupPermissions: "rwm",
 					},
 				},
 			},
