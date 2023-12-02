@@ -210,9 +210,10 @@ func createContainer(name string) {
 			RestartPolicy: container.RestartPolicy{Name: "always"},
 			CapAdd:        []string{"sys_admin", "mknod"},
 			SecurityOpt: []string{
-				"seccomp=unconfined", // Example: Set Seccomp profile to unconfined
+				"seccomp=//usr//share//containers//seccomp.json", // Example: Set Seccomp profile to unconfined
 				"label=disable", // Example: Set AppArmor profile
 			},
+			/*
 			Resources: container.Resources{
 				Devices: []container.DeviceMapping{
 					{
@@ -222,6 +223,7 @@ func createContainer(name string) {
 					},
 				},
 			},
+			*/
 			// Add other host configurations here
 
 			Mounts: []mount.Mount{
