@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,9 +28,17 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 	"github.com/sirupsen/logrus"
 	"github.com/snowzach/rotatefilehook"
 )
+
+func init() {
+	// Register the time.Time type with encoding/gob
+	gob.Register(time.Time{})
+}
+
+var store = sessions.NewCookieStore([]byte(securecookie.GenerateRandomKey(32)))
 
 func DockerClient() (*client.Client, string) {
 	cli, err := client.NewEnvClient()
@@ -518,6 +527,26 @@ func Security(next SecurityHandle) http.Handler {
 		found, username := getUsernameFromCookie(r)
 
 		if found && len(username) > 0 {
+			session, _ := store.Get(r, "BLACK")
+
+			clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+			timestamp, _ := session.Values["timestamp"].(time.Time)
+			currentTime := time.Now()
+
+			if session.Values["ClientIP"] != clientIP || currentTime.Sub(timestamp) > 120*time.Second {
+				logrus.WithFields(logrus.Fields{
+					"Event":    "ActiveUser",
+					"Username": username,
+					"ClientIP": r.RemoteAddr,
+				}).Info("")
+				session.Values["ClientIP"] = clientIP
+				session.Values["timestamp"] = currentTime
+				err := session.Save(r, w)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
 			next(w, r, username)
 		} else {
 			login(w, r)

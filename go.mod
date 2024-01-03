@@ -6,7 +6,7 @@ require (
 	github.com/caddyserver/certmagic v0.17.2
 	github.com/docker/docker v20.10.12+incompatible
 	github.com/go-ldap/ldap/v3 v3.4.4
-	github.com/gorilla/securecookie v1.1.1
+	github.com/gorilla/securecookie v1.1.2
 	go.uber.org/zap v1.24.0
 )
 
@@ -20,6 +20,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/gorilla/sessions v1.2.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
 	github.com/libdns/libdns v0.2.1 // indirect
 	github.com/mholt/acmez v1.0.4 // indirect
